@@ -1,0 +1,11 @@
+# Ambiente de Python
+.venv/
+
+# Se descarga solo la primera vez que se ejecuta (pesos de YOLOv8n con COCO)
+yolov8n.pt
+
+# Multas generadas en cada prueba (CSV e imágenes)
+multas/
+
+# Videos de prueba y resultados
+*.mp4

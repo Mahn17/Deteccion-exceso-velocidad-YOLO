@@ -1,0 +1,628 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Detector de exceso de velocidad</title>
+<meta name="theme-color" content="#b42318">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚦</text></svg>">
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f6f6f3;
+    --surface: #ffffff;
+    --text: #161614;
+    --muted: #5f5e59;
+    --line: #e1e0d9;
+    --accent: #b42318;
+    --accent-text: #ffffff;
+    --ok: #1f7a4a;
+    --alerta: #b42318;
+    --aviso: #b54708;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --bg: #121211;
+      --surface: #1d1d1b;
+      --text: #f0efec;
+      --muted: #a9a89f;
+      --line: #34332f;
+      --accent: #f04438;
+      --accent-text: #1a0503;
+      --ok: #5cc28a;
+      --alerta: #f97066;
+      --aviso: #fdb022;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main, header, footer { max-width: 640px; margin: 0 auto; padding: 0 16px; }
+  header { padding-top: 18px; }
+  h1 { font-size: 1.3rem; margin: 0; }
+  .sub { margin: 2px 0 14px; color: var(--muted); font-size: .9rem; }
+
+  .visor { position: relative; aspect-ratio: 16 / 9; background: #000; border-radius: 14px; overflow: hidden; }
+  .visor video, .visor canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .visor video { object-fit: fill; }
+  .aviso {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    text-align: center; padding: 16px; color: #f0efec; background: rgba(0, 0, 0, .6); font-size: .95rem;
+  }
+  .aviso[hidden] { display: none; }
+
+  .estado { display: flex; gap: 12px; flex-wrap: wrap; color: var(--muted); font-size: .85rem; margin: 8px 2px 0; min-height: 1.3em; }
+  .acciones { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0; }
+  .boton {
+    display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 46px; padding: 8px;
+    border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--text);
+    font: inherit; font-size: .95rem; cursor: pointer; text-align: center;
+  }
+  .boton.primario { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+  .boton:disabled { opacity: .5; cursor: default; }
+
+  details.ajustes { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 4px 16px; margin-bottom: 16px; }
+  details.ajustes summary { cursor: pointer; padding: 10px 0; font-weight: 600; }
+  .campo { display: grid; gap: 4px; margin: 10px 0 14px; min-width: 0; }
+  .campo select { width: 100%; min-width: 0; }
+  .campo label { font-size: .9rem; }
+  .campo .ayuda { color: var(--muted); font-size: .8rem; }
+  .campo select, .campo input[type=number] {
+    font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--text);
+  }
+  .campo input[type=range] { width: 100%; }
+  .fila { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+  h2 { font-size: 1.05rem; margin: 18px 0 8px; }
+  .multas { display: grid; gap: 8px; margin-bottom: 24px; }
+  .vacio { color: var(--muted); font-size: .9rem; }
+  .tarjeta {
+    display: grid; grid-template-columns: 84px 1fr; gap: 12px; align-items: center; text-align: left; width: 100%;
+    background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--alerta);
+    border-radius: 12px; padding: 8px; font: inherit; color: inherit; cursor: pointer;
+  }
+  .tarjeta img { width: 84px; height: 60px; object-fit: cover; border-radius: 6px; background: #000; }
+  .tarjeta strong { font-family: ui-monospace, Menlo, monospace; font-size: 1.05rem; }
+  .tarjeta span { display: block; color: var(--muted); font-size: .85rem; }
+
+  /* Multa */
+  .modal { position: fixed; inset: 0; background: rgba(0, 0, 0, .65); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 10; }
+  .modal[hidden] { display: none; }
+  .multa { background: var(--surface); color: var(--text); width: 100%; max-width: 420px; max-height: 92vh; overflow: auto; border-radius: 16px; }
+  .multa .banda { background: var(--alerta); color: #fff; padding: 14px 16px; }
+  .multa .banda b { display: block; font-size: 1.25rem; letter-spacing: .02em; }
+  .multa .banda small { opacity: .9; }
+  .multa .cuerpo { padding: 14px 16px 16px; }
+  .placa {
+    font-family: ui-monospace, Menlo, monospace; font-size: 2rem; font-weight: 700; letter-spacing: .08em; text-align: center;
+    border: 3px solid var(--text); border-radius: 10px; padding: 6px 10px; margin: 4px 0 12px; background: var(--bg);
+  }
+  .placa.pendiente { font-size: 1rem; font-weight: 500; letter-spacing: 0; color: var(--muted); border-style: dashed; padding: 14px 10px; }
+  .datos { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; margin: 0 0 12px; }
+  .datos div { font-size: .85rem; color: var(--muted); }
+  .datos b { display: block; font-size: 1.05rem; color: var(--text); }
+  .datos .exceso b { color: var(--alerta); }
+  .fotos { display: grid; grid-template-columns: 2fr 1fr; gap: 8px; align-items: center; }
+  .fotos img { width: 100%; border-radius: 8px; background: #000; }
+  .nota { color: var(--muted); font-size: .75rem; margin: 12px 0; }
+  footer { color: var(--muted); font-size: .75rem; padding-bottom: 24px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🚦 Detector de exceso de velocidad</h1>
+  <p class="sub">YOLO · seguimiento de vehículos · lectura de placas · multas simuladas</p>
+</header>
+
+<main>
+  <section class="visor" id="visor">
+    <video id="video" playsinline muted></video>
+    <canvas id="lienzo"></canvas>
+    <div id="aviso" class="aviso">Elige <b>&nbsp;Cámara&nbsp;</b> o <b>&nbsp;Video&nbsp;</b> para empezar.</div>
+  </section>
+  <div class="estado" id="estado"></div>
+
+  <div class="acciones">
+    <button id="btn-camara" class="boton primario">📷 Cámara</button>
+    <label class="boton" id="btn-video">🎞 Video
+      <input id="archivo" type="file" accept="video/*" hidden>
+    </label>
+    <button id="btn-pausa" class="boton" disabled>⏸ Pausar</button>
+  </div>
+
+  <details class="ajustes" id="ajustes" open>
+    <summary>⚙ Calibración</summary>
+    <div class="campo">
+      <label for="orientacion">¿Cómo pasan los autos frente a la cámara?</label>
+      <select id="orientacion">
+        <option value="vertical">De lado (líneas verticales)</option>
+        <option value="horizontal">De frente o de espalda (líneas horizontales)</option>
+      </select>
+    </div>
+    <div class="fila">
+      <div class="campo">
+        <label for="linea-a">Línea A: <span id="val-a"></span></label>
+        <input id="linea-a" type="range" min="5" max="95" step="1">
+      </div>
+      <div class="campo">
+        <label for="linea-b">Línea B: <span id="val-b"></span></label>
+        <input id="linea-b" type="range" min="5" max="95" step="1">
+      </div>
+    </div>
+    <div class="fila">
+      <div class="campo">
+        <label for="distancia">Distancia A–B (m)</label>
+        <input id="distancia" type="number" min="1" max="500" step="0.5" inputmode="decimal">
+      </div>
+      <div class="campo">
+        <label for="limite">Límite (km/h)</label>
+        <input id="limite" type="number" min="15" max="300" step="5" inputmode="numeric">
+      </div>
+    </div>
+    <p class="campo ayuda">Coloca las líneas sobre dos marcas de la calle cuya distancia real conozcas.
+      Con el celular fijo, la velocidad es distancia ÷ tiempo entre el cruce de A y el de B.</p>
+  </details>
+
+  <h2>Multas generadas</h2>
+  <div class="multas" id="multas"><p class="vacio">Todavía no hay multas.</p></div>
+</main>
+
+<footer>Simulación con fines educativos: las multas no tienen validez oficial.</footer>
+
+<div class="modal" id="modal" hidden>
+  <article class="multa" role="dialog" aria-modal="true" aria-labelledby="titulo-multa">
+    <div class="banda">
+      <b id="titulo-multa">⚠ EXCESO DE VELOCIDAD</b>
+      <small>Multa simulada · folio <span id="m-folio"></span></small>
+    </div>
+    <div class="cuerpo">
+      <div id="m-placa" class="placa"></div>
+      <div class="datos">
+        <div>Velocidad<b id="m-velocidad"></b></div>
+        <div>Límite<b id="m-limite"></b></div>
+        <div class="exceso">Exceso<b id="m-exceso"></b></div>
+        <div>Monto (simulado)<b id="m-monto"></b></div>
+        <div>Vehículo<b id="m-tipo"></b></div>
+        <div>Fecha<b id="m-fecha"></b></div>
+      </div>
+      <div class="fotos">
+        <img id="m-auto" alt="Vehículo detectado">
+        <img id="m-img-placa" alt="Placa detectada" hidden>
+      </div>
+      <p class="nota">Simulación con fines educativos, sin validez oficial.</p>
+      <button class="boton primario" id="m-cerrar" style="width:100%">Cerrar</button>
+    </div>
+  </article>
+</div>
+
+<script>
+const ANCHO_MAX = 1280;      // ancho máximo de los cuadros que se envían
+const LIMITE_MIN = 15;       // límite de velocidad mínimo que se puede poner (km/h)
+// En el modo Video, el video se reproduce a la mitad de su velocidad: se ve fluido y, por
+// ngrok, se alcanzan a analizar unos 3 cuadros por segundo de video, suficientes para medir
+// autos rápidos. A velocidad normal serían la mitad y un auto rápido puede no medirse.
+const VELOCIDAD_VIDEO = 0.5;
+const CLAVE = 'velocidad-config';
+
+const $ = id => document.getElementById(id);
+const video = $('video'), lienzo = $('lienzo'), ctx = lienzo.getContext('2d');
+const captura = document.createElement('canvas');
+const cctx = captura.getContext('2d');
+
+let sesion = nuevaSesion();
+let modo = null;            // 'camara' | 'video'
+let corriendo = false;
+let ultimo = null;          // última respuesta del servidor
+let ciclo = 0;              // cada bucle de análisis tiene su número; uno viejo se detiene solo
+let tPausa = 0;             // momento en que se pausó la cámara
+let multas = [];
+const vistas = new Set();
+let folioAbierto = null;
+let fps = 0, tPrevio = 0;
+let audio = null;
+
+// ---------------------------------------------------------------- Configuración
+const config = Object.assign(
+  { orientacion: 'vertical', linea_a: 0.3, linea_b: 0.7, distancia_m: 10, limite_kmh: 60 },
+  leerGuardada());
+config.limite_kmh = Math.max(LIMITE_MIN, config.limite_kmh);
+
+function leerGuardada() {
+  try { return JSON.parse(localStorage.getItem(CLAVE)) || {}; } catch { return {}; }
+}
+function guardar() {
+  try { localStorage.setItem(CLAVE, JSON.stringify(config)); } catch { /* sin almacenamiento */ }
+}
+
+function mostrarConfig() {
+  $('orientacion').value = config.orientacion;
+  $('linea-a').value = Math.round(config.linea_a * 100);
+  $('linea-b').value = Math.round(config.linea_b * 100);
+  $('val-a').textContent = `${Math.round(config.linea_a * 100)} %`;
+  $('val-b').textContent = `${Math.round(config.linea_b * 100)} %`;
+  $('distancia').value = config.distancia_m;
+  $('limite').value = config.limite_kmh;
+}
+
+function leerConfig() {
+  config.orientacion = $('orientacion').value;
+  let a = Number($('linea-a').value) / 100, b = Number($('linea-b').value) / 100;
+  if (a === b) b = Math.min(0.95, a + 0.05);
+  config.linea_a = a;
+  config.linea_b = b;
+  const d = Number($('distancia').value), l = Number($('limite').value);
+  if (d > 0) config.distancia_m = d;
+  if (l >= LIMITE_MIN) config.limite_kmh = l;
+  guardar();
+  // Solo se actualizan las líneas. Los campos de distancia y límite no se reescriben
+  // mientras se teclean: si no, al borrar un dígito el campo regresaba al valor anterior
+  $('linea-b').value = Math.round(b * 100);
+  $('val-a').textContent = `${Math.round(a * 100)} %`;
+  $('val-b').textContent = `${Math.round(b * 100)} %`;
+}
+
+for (const id of ['orientacion', 'linea-a', 'linea-b']) {
+  $(id).addEventListener('input', leerConfig);
+}
+
+// La distancia y el límite se aplican al terminar de escribir (al salir del campo), para no
+// usar valores a medias, como 4 km/h mientras se teclea 40. Si el campo quedó vacío o en 0,
+// se regresa al último valor válido; un límite menor al mínimo se sube al mínimo.
+for (const [id, campo, minimo] of [['distancia', 'distancia_m', 0], ['limite', 'limite_kmh', LIMITE_MIN]]) {
+  $(id).addEventListener('change', () => {
+    const valor = Number($(id).value);
+    if (!(valor > 0)) $(id).value = config[campo];
+    else if (valor < minimo) $(id).value = minimo;
+    leerConfig();
+  });
+}
+
+function nuevaSesion() {
+  return crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now();
+}
+
+// ---------------------------------------------------------------- Dibujo
+function ajustarLienzo() {
+  const r = lienzo.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  const w = Math.round(r.width * dpr), h = Math.round(r.height * dpr);
+  if (lienzo.width !== w || lienzo.height !== h) { lienzo.width = w; lienzo.height = h; }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return [r.width, r.height];
+}
+
+// Esquinas de la caja, como draw_border() de visualize.py
+function esquinas(x1, y1, x2, y2, color) {
+  const lx = (x2 - x1) / 4, ly = (y2 - y1) / 4;
+  ctx.strokeStyle = color; ctx.lineWidth = 3; ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(x1, y1 + ly); ctx.lineTo(x1, y1); ctx.lineTo(x1 + lx, y1);
+  ctx.moveTo(x2 - lx, y1); ctx.lineTo(x2, y1); ctx.lineTo(x2, y1 + ly);
+  ctx.moveTo(x1, y2 - ly); ctx.lineTo(x1, y2); ctx.lineTo(x1 + lx, y2);
+  ctx.moveTo(x2 - lx, y2); ctx.lineTo(x2, y2); ctx.lineTo(x2, y2 - ly);
+  ctx.stroke();
+}
+
+function etiqueta(texto, x, y, color) {
+  ctx.font = '600 13px system-ui, sans-serif';
+  const w = ctx.measureText(texto).width + 10, h = 20;
+  x = Math.max(0, Math.min(x, lienzo.getBoundingClientRect().width - w));   // dentro del visor
+  const ty = y - h - 2 > 0 ? y - h - 2 : y + 2;
+  ctx.fillStyle = color; ctx.fillRect(x, ty, w, h);
+  ctx.fillStyle = '#fff'; ctx.fillText(texto, x + 5, ty + 14);
+}
+
+// El lienzo es transparente: debajo se ve el video en vivo, sin esperar al servidor,
+// y encima se dibujan las líneas y las cajas del último cuadro analizado
+function dibujar() {
+  const [W, H] = ajustarLienzo();
+  ctx.clearRect(0, 0, W, H);
+
+  // Líneas de medición
+  ctx.lineWidth = 2; ctx.setLineDash([10, 6]); ctx.strokeStyle = '#fdb022';
+  ctx.fillStyle = '#fdb022'; ctx.font = '700 16px system-ui, sans-serif';
+  for (const [nombre, p] of [['A', config.linea_a], ['B', config.linea_b]]) {
+    ctx.beginPath();
+    if (config.orientacion === 'horizontal') { ctx.moveTo(0, p * H); ctx.lineTo(W, p * H); ctx.stroke(); ctx.fillText(nombre, 8, p * H - 6); }
+    else { ctx.moveTo(p * W, 0); ctx.lineTo(p * W, H); ctx.stroke(); ctx.fillText(nombre, p * W + 6, 20); }
+  }
+  ctx.setLineDash([]);
+
+  if (!ultimo) return;
+  // Entre una respuesta y la siguiente, cada caja se mueve con la velocidad que calculó
+  // el servidor; así acompaña al auto aunque el servidor responda pocas veces por segundo
+  const dt = ahora() - ultimo.t;
+  if (dt > 2) return;   // respuesta demasiado vieja
+  const avance = Math.max(0, dt);
+  for (const v of ultimo.vehiculos) {
+    const dx = v.vel[0] * avance, dy = v.vel[1] * avance;
+    const [x1, y1, x2, y2] = [(v.caja[0] + dx) * W, (v.caja[1] + dy) * H, (v.caja[2] + dx) * W, (v.caja[3] + dy) * H];
+    const color = v.exceso ? '#d92d20' : (v.velocidad !== null ? '#1f7a4a' : '#2a78d6');
+    esquinas(x1, y1, x2, y2, color);
+    let texto = `#${v.id}`;
+    if (v.velocidad !== null) texto += ` ${Math.round(v.velocidad)} km/h`;
+    else if (v.midiendo) texto += ' midiendo…';
+    if (v.placa) texto += ` · ${v.placa}`;
+    etiqueta(texto, x1, y1, color);
+  }
+}
+
+// Tiempo actual en la misma escala que el t de los cuadros: tiempo del video o del reloj
+function ahora() {
+  if (modo === 'video') return video.currentTime;
+  return corriendo ? performance.now() / 1000 : tPausa;
+}
+
+// Se redibuja en cada cuadro de la pantalla para que las cajas se muevan suave
+function animar() {
+  dibujar();
+  requestAnimationFrame(animar);
+}
+
+// ---------------------------------------------------------------- Avisos y estado
+function aviso(html) {
+  $('aviso').innerHTML = html || '';
+  $('aviso').hidden = !html;
+}
+
+function estado() {
+  if (!ultimo) { $('estado').textContent = ''; return; }
+  $('estado').textContent =
+    `${fps.toFixed(1)} cuadros/s · servidor ${ultimo.ms} ms · ${ultimo.vehiculos.length} vehículo(s) · límite ${config.limite_kmh} km/h`;
+}
+
+// La proporción del visor es la del video, así las coordenadas normalizadas coinciden
+function ajustarVisor() {
+  if (video.videoWidth) $('visor').style.aspectRatio = `${video.videoWidth} / ${video.videoHeight}`;
+  dibujar();
+}
+video.addEventListener('loadedmetadata', ajustarVisor);
+
+// ---------------------------------------------------------------- Envío de cuadros
+function capturar() {
+  const escala = Math.min(1, ANCHO_MAX / video.videoWidth);
+  captura.width = Math.round(video.videoWidth * escala);
+  captura.height = Math.round(video.videoHeight * escala);
+  cctx.drawImage(video, 0, 0, captura.width, captura.height);
+  return new Promise(res => captura.toBlob(res, 'image/jpeg', 0.85));
+}
+
+async function analizar(t) {
+  const imagen = await capturar();
+  const datos = new FormData();
+  datos.append('imagen', imagen, 'cuadro.jpg');
+  datos.append('t', String(t));
+  datos.append('sesion', sesion);
+  datos.append('config', JSON.stringify(config));
+
+  const r = await fetch('/api/procesar', { method: 'POST', body: datos });
+  if (!r.ok) throw new Error(`${r.status} ${(await r.text()).replace(/<[^>]+>/g, ' ').trim().slice(0, 120)}`);
+  ultimo = await r.json();
+
+  const ahora = performance.now() / 1000;
+  if (tPrevio) fps = 0.7 * fps + 0.3 / Math.max(0.001, ahora - tPrevio);
+  tPrevio = ahora;
+
+  dibujar();
+  estado();
+  actualizarMultas(ultimo.multas);
+}
+
+const pausa = ms => new Promise(r => setTimeout(r, ms));
+
+async function bucleCamara() {
+  const mio = ++ciclo;
+  while (corriendo && modo === 'camara' && ciclo === mio) {
+    try {
+      // t: momento en que se tomó el cuadro (no cuando llega al servidor)
+      await analizar(performance.now() / 1000);
+      aviso('');
+    } catch (e) {
+      aviso(`Sin respuesta del servidor (${e.message}). Reintentando…`);
+      await pausa(1000);
+    }
+  }
+}
+
+function irA(t) {
+  return new Promise(res => {
+    video.addEventListener('seeked', res, { once: true });
+    video.currentTime = t;
+  });
+}
+
+// Tiempo, dentro del video, del cuadro que se está mostrando
+function cuadroActual() {
+  return new Promise(res => {
+    if (video.requestVideoFrameCallback) video.requestVideoFrameCallback((_, m) => res(m.mediaTime));
+    else requestAnimationFrame(() => res(video.currentTime));
+  });
+}
+
+// El video se reproduce de corrido (a VELOCIDAD_VIDEO) y se analiza el cuadro que se esté
+// mostrando cada vez que el servidor termina con el anterior.
+async function bucleVideo() {
+  const mio = ++ciclo;
+  video.playbackRate = VELOCIDAD_VIDEO;
+  await video.play().catch(() => {});
+  while (corriendo && modo === 'video' && ciclo === mio && !video.ended) {
+    try {
+      // t: tiempo dentro del video, así la velocidad no depende de qué tan rápido responda el servidor
+      const t = await cuadroActual();
+      if (ciclo !== mio || !corriendo) return;
+      await analizar(t);
+      aviso('');
+    } catch (e) {
+      aviso(`Sin respuesta del servidor (${e.message}). Reintentando…`);
+      await pausa(1000);
+    }
+  }
+}
+
+video.addEventListener('ended', () => {
+  if (modo !== 'video') return;
+  corriendo = false;
+  $('btn-pausa').textContent = '↺ Repetir';
+});
+
+// ---------------------------------------------------------------- Controles
+async function reiniciarSesion() {
+  const anterior = sesion;
+  sesion = nuevaSesion();
+  ultimo = null; fps = 0; tPrevio = 0;
+  const datos = new FormData(); datos.append('sesion', anterior);
+  fetch('/api/reiniciar', { method: 'POST', body: datos }).catch(() => {});
+}
+
+function iniciarAudio() {
+  try { audio = audio || new (window.AudioContext || window.webkitAudioContext)(); audio.resume(); } catch { audio = null; }
+}
+
+async function usarCamara() {
+  iniciarAudio();
+  if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+    aviso('La cámara necesita HTTPS: abre la liga <b>https://</b> de ngrok.');
+    return;
+  }
+  corriendo = false;
+  await pausa(50);
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: false,
+    });
+    if (video.src) { URL.revokeObjectURL(video.src); video.removeAttribute('src'); }
+    video.srcObject = stream;
+    await video.play();
+  } catch (e) {
+    aviso(`No se pudo abrir la cámara (${e.name}). Revisa los permisos.`);
+    return;
+  }
+  await reiniciarSesion();
+  modo = 'camara';
+  corriendo = true;
+  $('btn-pausa').disabled = false;
+  $('btn-pausa').textContent = '⏸ Pausar';
+  aviso('');
+  bucleCamara();
+}
+
+async function usarVideo(archivo) {
+  iniciarAudio();
+  corriendo = false;
+  await pausa(50);
+  if (video.srcObject) { video.srcObject.getTracks().forEach(t => t.stop()); video.srcObject = null; }
+  if (video.src) URL.revokeObjectURL(video.src);
+  video.src = URL.createObjectURL(archivo);
+  await new Promise(res => video.addEventListener('loadeddata', res, { once: true }));
+  await irA(0);
+  await reiniciarSesion();
+  modo = 'video';
+  corriendo = true;
+  $('btn-pausa').disabled = false;
+  $('btn-pausa').textContent = '⏸ Pausar';
+  aviso('');
+  bucleVideo();
+}
+
+$('btn-camara').onclick = usarCamara;
+$('archivo').onchange = () => {
+  if ($('archivo').files[0]) usarVideo($('archivo').files[0]);
+  $('archivo').value = '';
+};
+$('btn-pausa').onclick = async () => {
+  if (corriendo) {
+    tPausa = performance.now() / 1000;
+    corriendo = false;
+    video.pause();
+    $('btn-pausa').textContent = '▶ Continuar';
+    return;
+  }
+  if (modo === 'video' && video.ended) {
+    await irA(0);
+    await reiniciarSesion();
+    dibujar();
+  }
+  corriendo = true;
+  $('btn-pausa').textContent = '⏸ Pausar';
+  if (modo === 'camara') { await video.play().catch(() => {}); bucleCamara(); } else bucleVideo();
+};
+
+// ---------------------------------------------------------------- Multas
+function urlImagen(archivo, version) {
+  return `/multas/${encodeURIComponent(archivo)}?v=${encodeURIComponent(version || '')}`;
+}
+
+function alertar() {
+  navigator.vibrate?.([250, 120, 250]);
+  if (!audio) return;
+  const o = audio.createOscillator(), g = audio.createGain();
+  o.type = 'square'; o.frequency.value = 880;
+  g.gain.setValueAtTime(0.15, audio.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + 0.6);
+  o.connect(g).connect(audio.destination);
+  o.start(); o.stop(audio.currentTime + 0.6);
+}
+
+function actualizarMultas(lista) {
+  multas = lista;
+  const nuevas = lista.filter(m => !vistas.has(m.folio));
+  nuevas.forEach(m => vistas.add(m.folio));
+  if (nuevas.length) { alertar(); abrirMulta(nuevas[nuevas.length - 1].folio); }
+  else if (folioAbierto) abrirMulta(folioAbierto);
+  pintarLista();
+}
+
+function pintarLista() {
+  const cont = $('multas');
+  if (!multas.length) { cont.innerHTML = '<p class="vacio">Todavía no hay multas.</p>'; return; }
+  cont.replaceChildren(...[...multas].reverse().map(m => {
+    const b = document.createElement('button');
+    b.className = 'tarjeta';
+    const img = document.createElement('img');
+    img.src = urlImagen(m.imagen_auto, m.folio); img.alt = '';
+    const info = document.createElement('div');
+    const placa = document.createElement('strong');
+    placa.textContent = m.placa || 'Placa no leída';
+    const det = document.createElement('span');
+    det.textContent = `${m.velocidad_kmh} km/h (límite ${m.limite_kmh}) · ${m.folio}`;
+    info.append(placa, det);
+    b.append(img, info);
+    b.onclick = () => abrirMulta(m.folio);
+    return b;
+  }));
+}
+
+function abrirMulta(folio) {
+  const m = multas.find(x => x.folio === folio);
+  if (!m) return;
+  folioAbierto = folio;
+  $('m-folio').textContent = m.folio;
+  const placa = $('m-placa');
+  placa.textContent = m.placa || 'Leyendo la placa…';
+  placa.classList.toggle('pendiente', !m.placa);
+  $('m-velocidad').textContent = `${m.velocidad_kmh} km/h`;
+  $('m-limite').textContent = `${m.limite_kmh} km/h`;
+  $('m-exceso').textContent = `+${m.exceso_kmh} km/h`;
+  $('m-monto').textContent = `$${Number(m.monto).toLocaleString('es-MX')} MXN`;
+  $('m-tipo').textContent = m.tipo;
+  $('m-fecha').textContent = m.fecha;
+  $('m-auto').src = urlImagen(m.imagen_auto, m.folio);
+  $('m-img-placa').hidden = !m.imagen_placa;
+  if (m.imagen_placa) $('m-img-placa').src = urlImagen(m.imagen_placa, m.placa);
+  $('modal').hidden = false;
+}
+
+function cerrarMulta() { $('modal').hidden = true; folioAbierto = null; }
+$('m-cerrar').onclick = cerrarMulta;
+$('modal').onclick = e => { if (e.target === $('modal')) cerrarMulta(); };
+
+mostrarConfig();
+requestAnimationFrame(animar);
+</script>
+</body>
+</html>
