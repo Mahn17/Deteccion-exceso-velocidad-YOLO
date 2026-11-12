@@ -9,6 +9,17 @@ Autor: Manuel Alejandro Heredia Nogales — Redes Neuronales 2026-2
 
 ---
 
+## Demostración
+
+[`grabacion_app.mp4`](grabacion_app.mp4) muestra la app en un celular, simulado en el
+navegador (390×844), usando el video de prueba:
+1. La calibración: distancia de 20 m y límite de 60 km/h.
+2. El seguimiento y la medición de las dos camionetas.
+3. La multa a `VSA123B` a 90.2 km/h.
+4. La lista de multas generadas.
+
+---
+
 ## Cómo funciona
 
 El celular solo muestra la imagen y dibuja los resultados; todo el análisis lo hace un
@@ -248,6 +259,7 @@ Todavía falta probarla con tráfico real.
 ├── templates/index.html        # la aplicación del celular
 ├── license_plate_detector.pt   # detector de placas (YOLOv8n)
 ├── recursos/                   # foto para el video de prueba
+├── grabacion_app.mp4           # grabación de la app usando el video de prueba
 ├── requirements.txt
 └── multas/                     # se crea al generar multas: multas.csv y fotos
 ```

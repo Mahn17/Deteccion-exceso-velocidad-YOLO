@@ -9,3 +9,6 @@ multas/
 
 # Videos de prueba y resultados
 *.mp4
+
+# Excepción: la grabación de la app sí se sube
+!grabacion_app.mp4
